@@ -135,7 +135,9 @@ n_core <- parallel::detectCores()-1
 #Load in functions
 source("~/Desktop/R_color_palettes/Gadek_custom_colors.R")
 source("~/Desktop/ggplot_themes/ggplot_themes.R")
-source("/functions/cbs_model_runners.R")
+source("~/Dropbox/Research/Crane_body_size/functions/cbs_model_runners.R")
+source("~/Dropbox/Research/Crane_body_size/Data_processing.R") #this rewrites and loads in data each time
+
 
 theme_set(theme_arial_clean())
 
@@ -145,12 +147,6 @@ models <- paste(getwd(), "/models/", sep="")
 results <- paste(getwd(), "/models/results/", sep="")
 ```
 
-# Load in data
-```{r}
-
-morpho.massive <- read_csv("data/morpho_massive.csv")
-
-```
 
 We have already processed data in the `Data_processing.R` script and run models in the `Run_models.R` script. This .Rmd file is meant for data exploration, statistical tests, and presentation (figure production).
 
@@ -158,10 +154,11 @@ We have already processed data in the `Data_processing.R` script and run models 
 ## Mass boxplot
 ```{r, echo=F}
 
-p <- morpho.massive %>%
+p <- morpho_massive %>%
   group_by(taxon_name, sex) %>%
   filter(sex %in% c("M", "F"),
          mass >=1800,
+         Year >=1988,
          taxon_name %in% c("Antigone canadensis tabida", "Antigone canadensis canadensis")) %>%
   ggplot(., aes(taxon_name, mass, fill = sex)) +
   #geom_violin(trim = F) +
@@ -201,10 +198,11 @@ ggsave(
 ## Mass over time
 ```{r, echo=F}
 
-p <- morpho.massive %>%
+p <- morpho_massive %>%
   group_by(taxon_name, sex) %>%
   filter(sex %in% c("M", "F"),
          mass >=1800,
+         Year >=1988,
          taxon_name %in% c("Antigone canadensis tabida", "Antigone canadensis canadensis")) %>%
   ggplot(., aes(Year, mass, fill = sex, group=sex)) +
   geom_point(
@@ -224,7 +222,7 @@ ggsave(
   p,
   filename = paste(
     getwd(),
-    "/figures/Mean_mass_year_subspecies_sex_massive_morpho.pdf",
+    "/figures/Mass_year_subspecies_sex_massive_morpho.pdf",
     sep = ""
   ),
   bg = "transparent",
@@ -236,16 +234,97 @@ ggsave(
 
 ```
 
+## Wing-mass index over time
+```{r, echo=F}
+
+p <- morpho_massive %>%
+  group_by(taxon_name, sex) %>%
+  filter(sex %in% c("M", "F"),
+         mass >=1800,
+         Year >=1988,
+         taxon_name %in% c("Antigone canadensis tabida", "Antigone canadensis canadensis")) %>%
+  ggplot(., aes(Year, wm.index, fill = sex, group=sex)) +
+  geom_point(
+    color = "black",
+    shape = 21,
+    size = 2
+  ) +
+  geom_smooth(method = "lm", color="black") +
+  scale_fill_sex(palette = "sexes") +
+  scale_color_sex(palette = "sexes") +
+  theme(axis.text.x = element_text(face = "plain"),
+        legend.position = c(0.1, 0.85)) +
+  labs(x = "", y = "wing/mass^(0.33)")+
+  facet_wrap(.~taxon_name, scales="free_y")
+p
+ggsave(
+  p,
+  filename = paste(
+    getwd(),
+    "/figures/Wing-mass_index_year_subspecies_sex_massive_morpho.pdf",
+    sep = ""
+  ),
+  bg = "transparent",
+  height = 4.5,
+  width = 9,
+  units = "in",
+  device = cairo_pdf
+)
+
+```
+
+
+## Sex ratio over time
+```{r, echo=F}
+
+p <- morpho_massive %>%
+  filter(
+    sex %in% c("M", "F"),
+    mass >= 1800,
+    Year >= 1988,
+    taxon_name %in% c("Antigone canadensis tabida", "Antigone canadensis canadensis")
+  ) %>%
+  dplyr::select(Year, taxon_name, ratio) %>%
+  distinct() %>%
+  ggplot(., aes(Year, ratio, group = taxon_name)) +
+  geom_line(aes(color = taxon_name), size = 1) +
+  geom_point(aes( fill =taxon_name),
+    color = "black",
+    shape = 21,
+    size = 2
+  ) +
+  scale_fill_crane(palette = "cranes") +
+  scale_color_crane(palette = "cranes") +
+  theme(axis.text.x = element_text(face = "plain"),
+        legend.position = c(0.7, 0.85)) +
+  labs(x = "", y = "sex ratio (male/female)")
+p
+ggsave(
+  p,
+  filename = paste(
+    getwd(),
+    "/figures/Sex_ratio_year_subspecies_massive_morpho.pdf",
+    sep = ""
+  ),
+  bg = "transparent",
+  height = 4.5,
+  width = 9,
+  units = "in",
+  device = cairo_pdf
+)
+
+```
 # Breakpoint regressions
 Once possibility I want to explore is that there was a change in measurement tools or measurer at some time(s) in the dataset and these are leading to linear-looking increase. To get at this I will do breakpoint regressions for each explanotory variable.
 
-```{r, `BreakpointLesserMass`}
+## Greater breakpoint analysis
+```{r, `BreakpointGesserMass`}
 
-breaks <- morpho.massive$Year[which(morpho.massive$Year >= 1990 & morpho.massive$Year <= 2010)] #define range of breaks
+breaks <- morpho_massive$Year[which(morpho_massive$Year >= 1988 & morpho_massive$Year <= 2010)] #define range of breaks
 
 mse <- numeric(length(breaks))
 for(i in 1:length(breaks)){
- piecewise1 <- lm(mass ~ Year*(Year < breaks[i]) + Year*(Year>=breaks[i]), data=morpho.massive)
+ piecewise1 <- lm(mass ~ Year*(Year < breaks[i]) + Year*(Year>=breaks[i]), data=morpho_massive%>%filter(taxon_name=="Antigone canadensis tabida"))
  mse[i] <- summary(piecewise1)[6]
 }
 mse <- as.numeric(mse)
@@ -253,10 +332,27 @@ mse <- as.numeric(mse)
 
 plot(mse ~ breaks)
 
-#Breakpoint will show up as lowest point. Looks like 1993?
+#Breakpoint will show up as lowest point. Looks like 2005?
 ```
 
 
+## Lesser breakpoint analysis
+```{r, `BreakpointLesserMass`}
+
+breaks <- morpho_massive$Year[which(morpho_massive$Year >= 1988 & morpho_massive$Year <= 2010)] #define range of breaks
+
+mse <- numeric(length(breaks))
+for(i in 1:length(breaks)){
+ piecewise1 <- lm(mass ~ Year*(Year < breaks[i]) + Year*(Year>=breaks[i]), data=morpho_massive%>%filter(taxon_name=="Antigone canadensis canadensis"))
+ mse[i] <- summary(piecewise1)[6]
+}
+mse <- as.numeric(mse)
+
+
+plot(mse ~ breaks)
+
+#Breakpoint will show up as lowest point. Looks like several 1988, 1996, 2007?
+```
 
 
 # BRMS Model results
@@ -446,64 +542,11 @@ ggsave(
 
 ```
 
-# PCA models
+# PCA 
 
 ```{r, `PCAmodels`}
 
-select.cols.big<-c(4:7, 9:12)
-select.cols.little<-c(9:12)
 
-pca.years <- replicate(22, vector("list", 2), simplify = FALSE)
-
-Years <- morpho.massive%>%
-  filter(!Year == 2002)%>%
-  dplyr::select(Year)%>%
-  distinct()%>%
-  pull(Year)
-
-
-for(i in 1:length(pca.years)){ 
-  
-pca.cols.to.add <-morpho.massive%>%
-  filter(sex %in% c("M", "F"),
-         Year == Years[i],
-         taxon_name %in% c("Antigone canadensis tabida", "Antigone canadensis canadensis"))%>%
-  dplyr::select(all_of(select.cols.big))%>%
-  na.omit()%>%
-  dplyr::select(1:4)
-
-
-pca.f <-morpho.massive%>%
-  filter(sex %in% c("M", "F"),
-         Year == Years[i],
-         taxon_name %in% c("Antigone canadensis tabida", "Antigone canadensis canadensis"))%>%
-  dplyr::select(all_of(select.cols.little))%>%
-  na.omit()%>%
-  prcomp(., center=T,
-         scale=T)
-
-
-pca.data<- as.data.frame(pca.f$x)
-
-pca.data$species <- pca.cols.to.add$taxon_name
-pca.data$sex <- pca.cols.to.add$sex
-pca.data$Year <- pca.cols.to.add$Year
-
-pca.years[[i]][[1]] <- pca.data
-
-pca.years[[i]][[2]] <- pca.f
-
-}
-
-
-names(pca.years) <- Years
-
-pca.score.years <- pca.years[[1]][[1]]
-
-for(i in 2:length(Years)){
-  temp <- pca.years[[i]][[1]]
-  pca.score.years <- rbind(pca.score.years, temp)
-}
 
 ```
 
