@@ -1,0 +1,560 @@
+---
+title: "Crane Body Size"
+author: "Chauncey Gadek and Oona Takano" 
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: true
+    number_sections: true
+    toc_depth: 5
+    code_folding: show
+    #df_print: paged
+    #df_print: kable
+    #toc_float: true
+      #collapsed: false
+      #smooth_scroll: TRUE
+    theme: cosmo #spacelab #yeti #united #cosmo
+    highlight: tango
+  pdf_document:
+    df_print: kable
+fontsize: 12pt
+geometry: margin=0.25in
+always_allow_html: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+```{=html}
+<style>
+/* HTML FORMATTING */
+h1, .h1, h2, .h2, h3, .h3, h4, .h4, h5, .h5 {
+  margin-top: 25px; /* space before each header */
+  font-weight: bold; /* bold headers */
+}
+</style>
+```
+
+```{R, echo=FALSE}
+# I set some GLOBAL R chunk options here.
+#   (to hide this message add "echo=FALSE" to the code chunk options)
+#rm(list =ls (all = TRUE)) #This removes objects from global environ
+knitr::opts_chunk$set(echo=F, comment = NA, message = FALSE, warning = FALSE, width = 100)
+knitr::opts_chunk$set(fig.align = "center", fig.height = 4, fig.width = 6)
+
+```
+
+# Load Packages
+
+```{R}
+pacman::p_load(
+AMR,
+devtools,
+magrittr,
+ggpubr,
+reshape,
+reshape2,
+performance,
+plyr,
+dplyr,
+tidyr,
+tibble,
+car,
+rcompanion,
+GGally,
+Hmisc,
+gridExtra,
+stats,
+gplots,
+ggplot2,
+ggExtra,
+cowplot,
+colorspace,
+stats4, # Forces knitr to work when it's being wonky
+PMCMR, #Allows Kruskal-Wallis post-hocs
+effects,
+gridExtra,
+lattice,
+survival,
+fmsb,
+faraway,
+ape,
+#wBoot,
+ggridges,
+boot,
+effsize,
+plotrix,
+colorspace,
+patchwork,
+ggdist,
+# Mapping 
+raster,
+sp,
+rgdal,
+prettymapr,
+viridis,
+rasterVis,
+# Modeling packages 
+nlme,
+lme4,
+AICcmodavg,
+MuMIn,
+reghelper,
+lsmeans,
+rsq, # get r-squared values from GLM
+r2glmm, # for R^2 values from lmer(, and glmer(,
+multcompView, # related to multiple comparisons?
+jtools, # interaction plots 
+interactions, # interaction plots 
+broom,
+stargazer, # model output tables
+ggeffects, # for estimating model predictions from mixed effects models
+MCMCglmm,
+bayesplot,
+rstan,
+Rcpp, # required for brms
+brms,
+magrittr,
+tidybayes,
+modelr,
+hexbin,
+ggExtra,
+rgl,
+readr,
+# Phylo packages 
+phytools,
+ape, 
+extrafont)
+
+# To run each time you load rstan
+options(mc.cores = parallel::detectCores()) # for core setup 
+rstan_options(auto_write = TRUE) # auto save  bare verion of compiled Stan program to HD
+
+#set cores to run for models
+n_core <- parallel::detectCores()-1
+
+#Load in functions
+source("~/Desktop/R_color_palettes/Gadek_custom_colors.R")
+source("~/Desktop/ggplot_themes/ggplot_themes.R")
+source("/functions/cbs_model_runners.R")
+
+theme_set(theme_arial_clean())
+
+#setup folder paths for less coding
+figures <- paste(getwd(), "/figures/", sep="")
+models <- paste(getwd(), "/models/", sep="")
+results <- paste(getwd(), "/models/results/", sep="")
+```
+
+# Load in data
+```{r}
+
+morpho.massive <- read_csv("data/morpho_massive.csv")
+
+```
+
+We have already processed data in the `Data_processing.R` script and run models in the `Run_models.R` script. This .Rmd file is meant for data exploration, statistical tests, and presentation (figure production).
+
+# Descriptive plots
+## Mass boxplot
+```{r, echo=F}
+
+p <- morpho.massive %>%
+  group_by(taxon_name, sex) %>%
+  filter(sex %in% c("M", "F"),
+         mass >=1800,
+         taxon_name %in% c("Antigone canadensis tabida", "Antigone canadensis canadensis")) %>%
+  ggplot(., aes(taxon_name, mass, fill = sex)) +
+  #geom_violin(trim = F) +
+  #geom_box plot(width = 0.1,  position = position_dodge(width = 0.9)) +
+  geom_boxplot(width = 0.7,
+               alpha = 0.5,
+               outlier.shape = NA) +
+  geom_point(
+    color = "black",
+    shape = 21,
+    size = 2,
+    position = position_jitterdodge(jitter.width = 0.15)
+  ) +
+  scale_x_discrete(labels = c("lesser", "greater")) +
+  scale_fill_sex(palette = "sexes") +
+  scale_color_sex(palette = "sexes") +
+  theme(axis.text.x = element_text(face = "plain"),
+        legend.position = c(0.2, 0.85)) +
+  labs(x = "", y = "mass (g)")
+p
+ggsave(
+  p,
+  filename = paste(
+    getwd(),
+    "/figures/Mean_mass_subspecies_sex_boxplot_massive_morpho.pdf",
+    sep = ""
+  ),
+  bg = "transparent",
+  height = 4.5,
+  width = 5,
+  units = "in",
+  device = cairo_pdf
+)
+
+```
+
+## Mass over time
+```{r, echo=F}
+
+p <- morpho.massive %>%
+  group_by(taxon_name, sex) %>%
+  filter(sex %in% c("M", "F"),
+         mass >=1800,
+         taxon_name %in% c("Antigone canadensis tabida", "Antigone canadensis canadensis")) %>%
+  ggplot(., aes(Year, mass, fill = sex, group=sex)) +
+  geom_point(
+    color = "black",
+    shape = 21,
+    size = 2
+  ) +
+  geom_smooth(method = "lm", color="black") +
+  scale_fill_sex(palette = "sexes") +
+  scale_color_sex(palette = "sexes") +
+  theme(axis.text.x = element_text(face = "plain"),
+        legend.position = c(0.1, 0.85)) +
+  labs(x = "", y = "mass (g)")+
+  facet_wrap(.~taxon_name, scales="free_y")
+p
+ggsave(
+  p,
+  filename = paste(
+    getwd(),
+    "/figures/Mean_mass_year_subspecies_sex_massive_morpho.pdf",
+    sep = ""
+  ),
+  bg = "transparent",
+  height = 4.5,
+  width = 9,
+  units = "in",
+  device = cairo_pdf
+)
+
+```
+
+# Breakpoint regressions
+Once possibility I want to explore is that there was a change in measurement tools or measurer at some time(s) in the dataset and these are leading to linear-looking increase. To get at this I will do breakpoint regressions for each explanotory variable.
+
+```{r, `BreakpointLesserMass`}
+
+breaks <- morpho.massive$Year[which(morpho.massive$Year >= 1990 & morpho.massive$Year <= 2010)] #define range of breaks
+
+mse <- numeric(length(breaks))
+for(i in 1:length(breaks)){
+ piecewise1 <- lm(mass ~ Year*(Year < breaks[i]) + Year*(Year>=breaks[i]), data=morpho.massive)
+ mse[i] <- summary(piecewise1)[6]
+}
+mse <- as.numeric(mse)
+
+
+plot(mse ~ breaks)
+
+#Breakpoint will show up as lowest point. Looks like 1993?
+```
+
+
+
+
+# BRMS Model results
+## lesser mass
+```{r, `ConditLesserMass`}
+
+ce1 <- conditional_effects(lesser_mass[[3]][[4]])
+
+p <- ggplot(ce1$Year, aes(Year, estimate__)) +
+  geom_ribbon(aes(ymin = lower__, ymax = upper__), fill = "grey") +
+  geom_line(color = "black",
+            linetype = "dashed",
+            linewidth = 1) +
+  labs(y = "mass (g)", x = "")
+p
+ggsave(
+  p + theme(),
+  filename = paste0(figures, "Lesser_cond_eff_mass-Year.pdf"),
+  height = 4,
+  width = 4.6,
+  units = "in",
+  device = cairo_pdf
+)
+
+```
+
+## Greater mass
+```{r, `ConditGreaterMass`}
+
+ce1 <- conditional_effects(greater_mass[[3]][[4]])
+
+p <- ggplot(ce1$Year, aes(Year, estimate__)) +
+  geom_ribbon(aes(ymin = lower__, ymax = upper__), fill = "grey") +
+  geom_line(color = "black",
+            linetype = "dashed",
+            linewidth = 1) +
+  labs(y = "mass (g)", x = "")
+p
+ggsave(
+  p + theme(),
+  filename = paste0(figures, "Greater_cond_eff_mass-Year.pdf"),
+  height = 4,
+  width = 4.6,
+  units = "in",
+  device = cairo_pdf
+)
+
+```
+
+## lesser wing
+```{r, `ConditLesserWing`}
+
+ce1 <- conditional_effects(lesser_wing[[3]][[4]])
+
+p <- ggplot(ce1$Year, aes(Year, estimate__)) +
+  geom_ribbon(aes(ymin = lower__, ymax = upper__), fill = "grey") +
+  geom_line(color = "black",
+            linetype = "dashed",
+            linewidth = 1) +
+  labs(y = "wing (mm)", x = "")
+p
+ggsave(
+  p + theme(),
+  filename = paste0(figures, "Lesser_cond_eff_wing-Year.pdf"),
+  height = 4,
+  width = 4.6,
+  units = "in",
+  device = cairo_pdf
+)
+
+```
+
+## Greater wing
+```{r, `ConditGreaterWing`}
+
+ce1 <- conditional_effects(greater_wing[[3]][[4]])
+
+p <- ggplot(ce1$Year, aes(Year, estimate__)) +
+  geom_ribbon(aes(ymin = lower__, ymax = upper__), fill = "grey") +
+  geom_line(color = "black",
+            linetype = "dashed",
+            linewidth = 1) +
+  labs(y = "wing (mm)", x = "")
+p
+ggsave(
+  p + theme(),
+  filename = paste0(figures, "Greater_cond_eff_wing-Year.pdf"),
+  height = 4,
+  width = 4.6,
+  units = "in",
+  device = cairo_pdf
+)
+
+```
+
+
+## lesser tarsus
+```{r, `ConditLesserTarsus`}
+
+ce1 <- conditional_effects(lesser_tarsus[[3]][[4]])
+
+p <- ggplot(ce1$Year, aes(Year, estimate__)) +
+  geom_ribbon(aes(ymin = lower__, ymax = upper__), fill = "grey") +
+  geom_line(color = "black",
+            linetype = "dashed",
+            linewidth = 1) +
+  labs(y = "tarsus (mm)", x = "")
+p
+ggsave(
+  p + theme(),
+  filename = paste0(figures, "Lesser_cond_eff_tarsus-Year.pdf"),
+  height = 4,
+  width = 4.6,
+  units = "in",
+  device = cairo_pdf
+)
+
+```
+
+## Greater tarsus
+```{r, `ConditGreaterTarsus`}
+
+ce1 <- conditional_effects(greater_tarsus[[3]][[4]])
+
+p <- ggplot(ce1$Year, aes(Year, estimate__)) +
+  geom_ribbon(aes(ymin = lower__, ymax = upper__), fill = "grey") +
+  geom_line(color = "black",
+            linetype = "dashed",
+            linewidth = 1) +
+  labs(y = "tarsus (mm)", x = "")
+p
+ggsave(
+  p + theme(),
+  filename = paste0(figures, "Greater_cond_eff_tarsus-Year.pdf"),
+  height = 4,
+  width = 4.6,
+  units = "in",
+  device = cairo_pdf
+)
+
+```
+
+
+## lesser WT index
+```{r, `ConditLesserWTI`}
+
+ce1 <- conditional_effects(lesser_wt_index[[3]][[4]])
+
+p <- ggplot(ce1$Year, aes(Year, estimate__)) +
+  geom_ribbon(aes(ymin = lower__, ymax = upper__), fill = "grey") +
+  geom_line(color = "black",
+            linetype = "dashed",
+            linewidth = 1) +
+  labs(y = "Wing-Tarsus Index", x = "")
+p
+ggsave(
+  p + theme(),
+  filename = paste0(figures, "Lesser_cond_eff_wing-tarsus-index-Year.pdf"),
+  height = 4,
+  width = 4.6,
+  units = "in",
+  device = cairo_pdf
+)
+
+```
+
+## Greater WT Index
+```{r, `ConditGreaterWTI`}
+
+ce1 <- conditional_effects(greater_wt_index[[3]][[4]])
+
+p <- ggplot(ce1$Year, aes(Year, estimate__)) +
+  geom_ribbon(aes(ymin = lower__, ymax = upper__), fill = "grey") +
+  geom_line(color = "black",
+            linetype = "dashed",
+            linewidth = 1) +
+  labs(y = "Wing-Tarsus Index", x = "")
+p
+ggsave(
+  p + theme(),
+  filename = paste0(figures, "Greater_cond_eff_wing-tarsus-index-Year.pdf"),
+  height = 4,
+  width = 4.6,
+  units = "in",
+  device = cairo_pdf
+)
+
+```
+
+# PCA models
+
+```{r, `PCAmodels`}
+
+select.cols.big<-c(4:7, 9:12)
+select.cols.little<-c(9:12)
+
+pca.years <- replicate(22, vector("list", 2), simplify = FALSE)
+
+Years <- morpho.massive%>%
+  filter(!Year == 2002)%>%
+  dplyr::select(Year)%>%
+  distinct()%>%
+  pull(Year)
+
+
+for(i in 1:length(pca.years)){ 
+  
+pca.cols.to.add <-morpho.massive%>%
+  filter(sex %in% c("M", "F"),
+         Year == Years[i],
+         taxon_name %in% c("Antigone canadensis tabida", "Antigone canadensis canadensis"))%>%
+  dplyr::select(all_of(select.cols.big))%>%
+  na.omit()%>%
+  dplyr::select(1:4)
+
+
+pca.f <-morpho.massive%>%
+  filter(sex %in% c("M", "F"),
+         Year == Years[i],
+         taxon_name %in% c("Antigone canadensis tabida", "Antigone canadensis canadensis"))%>%
+  dplyr::select(all_of(select.cols.little))%>%
+  na.omit()%>%
+  prcomp(., center=T,
+         scale=T)
+
+
+pca.data<- as.data.frame(pca.f$x)
+
+pca.data$species <- pca.cols.to.add$taxon_name
+pca.data$sex <- pca.cols.to.add$sex
+pca.data$Year <- pca.cols.to.add$Year
+
+pca.years[[i]][[1]] <- pca.data
+
+pca.years[[i]][[2]] <- pca.f
+
+}
+
+
+names(pca.years) <- Years
+
+pca.score.years <- pca.years[[1]][[1]]
+
+for(i in 2:length(Years)){
+  temp <- pca.years[[i]][[1]]
+  pca.score.years <- rbind(pca.score.years, temp)
+}
+
+```
+
+```{r, `PC1scatter`, out.width=50%}
+
+p <- pca.score.years%>%
+  filter(species =="Antigone canadensis tabida")%>%
+ggplot(., aes(x=Year, y=PC1, fill=sex))+
+  #geom_point(shape=21, size=2)+
+  geom_smooth(color="black", method="lm", linetype="dashed")+
+  scale_fill_crane("cranes")
+p
+
+ggsave(p +theme(), filename = paste0(figures,"Greater_wing_bill_tarsus_culmen_PC1-Year_big_morpho.pdf"), height = 4.6, width = 4.5, units = "in", device = cairo_pdf)
+
+
+
+p1 <- pca.score.years%>%
+  filter(species =="Antigone canadensis canadensis")%>%
+ggplot(., aes(x=Year, y=PC1, fill=sex))+
+  #geom_point(shape=21, size=2)+
+  geom_smooth(color="black", method="lm", linetype="dashed")+
+  scale_fill_crane("cranes")
+p1
+
+ggsave(p1 +theme(), filename = paste0(figures,"Lesser_wing_bill_tarsus_culmen_PC1-Year_big_morpho.pdf"), height = 4.6, width = 4.5, units = "in", device = cairo_pdf)
+
+```
+
+
+```{r, `PC2scatter`, out.width=50%}
+
+p <- pca.score.years%>%
+  filter(species =="Antigone canadensis tabida")%>%
+ggplot(., aes(x=Year, y=PC2, fill=sex))+
+  #geom_point(shape=21, size=2)+
+  geom_smooth(color="black", method="lm", linetype="dashed")+
+  scale_fill_crane("cranes")
+p
+
+ggsave(p +theme(), filename = paste0(figures,"Greater_wing_bill_tarsus_culmen_PC2-Year_big_morpho.pdf"), height = 4.6, width = 4.5, units = "in", device = cairo_pdf)
+
+
+p <- pca.score.years%>%
+  filter(species =="Antigone canadensis canadensis")%>%
+ggplot(., aes(x=Year, y=PC2, fill=sex))+
+  #geom_point(shape=21, size=2)+
+  geom_smooth(color="black", method="lm", linetype="dashed")+
+  scale_fill_crane("cranes")
+p
+
+ggsave(p +theme(), filename = paste0(figures,"Lesser_wing_bill_tarsus_culmen_PC2-Year_big_morpho.pdf"), height = 4.6, width = 4.5, units = "in", device = cairo_pdf)
+
+```
